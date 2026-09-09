@@ -1,7 +1,7 @@
 # ─── build ─────────────────────────────────────────────
 FROM node:22-slim AS build
 WORKDIR /app
-# openssl para o Prisma; toolchain como fallback caso argon2/sharp não tenham prebuild
+# openssl para o Prisma; toolchain como fallback caso sharp não tenha prebuild
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl python3 make g++ \
     && rm -rf /var/lib/apt/lists/*

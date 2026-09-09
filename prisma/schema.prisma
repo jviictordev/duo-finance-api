@@ -7,11 +7,17 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = []
+  // "native" p/ dev local; "rhel-openssl-3.0.x" p/ o runtime da Vercel/Lambda
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // conexão direta (sem pooler) usada por `prisma migrate`. Sem DIRECT_URL,
+  // o Prisma usa DATABASE_URL. Na Vercel: DATABASE_URL = string "-pooler" do
+  // Neon, DIRECT_URL = string direta.
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────────────────────

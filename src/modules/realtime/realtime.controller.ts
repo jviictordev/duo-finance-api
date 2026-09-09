@@ -1,4 +1,10 @@
-import { Controller, MessageEvent, Query, Sse } from '@nestjs/common';
+import {
+  Controller,
+  MessageEvent,
+  NotImplementedException,
+  Query,
+  Sse,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { interval, map, merge, Observable } from 'rxjs';
 import { Public } from '../../common/decorators/public.decorator';
@@ -22,6 +28,14 @@ export class RealtimeController {
       'SSE de eventos do espaço. Auth via ?token= (obtido em POST /api/auth/stream-token).',
   })
   async stream(@Query('token') token: string): Promise<Observable<MessageEvent>> {
+    // Serverless (Vercel/Lambda) não sustenta conexão longa nem tem memória
+    // compartilhada entre invocações — o front deve usar polling em /activity.
+    if (process.env.VERCEL || process.env.SSE_DISABLED === 'true') {
+      throw new NotImplementedException(
+        'SSE indisponível neste ambiente. Use polling em GET /api/activity.',
+      );
+    }
+
     const { sub } = await this.tokens.verifyStreamToken(token);
     const membership = await this.prisma.spaceMember.findFirstOrThrow({
       where: { userId: sub },

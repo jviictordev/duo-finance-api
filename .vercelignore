@@ -1,0 +1,13 @@
+.env
+.env.*
+storage
+coverage
+*.log
+docker
+docker-compose*.yml
+Dockerfile
+Caddyfile
+.github
+DEPLOY.md
+**/*.spec.ts
+test

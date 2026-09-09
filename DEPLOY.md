@@ -1,11 +1,15 @@
 # Deploy — Duo Finance API
 
-Stack de produção: **Docker Compose** (api + Postgres + Redis + Caddy) num VPS.
-Caddy termina TLS automaticamente (Let's Encrypt).
+Dois caminhos suportados:
+
+- **A. Vercel** (serverless, free tier) — ver seção no fim. Simples e grátis,
+  mas **sem SSE** (front usa polling) e precisa de Postgres externo (Neon).
+- **B. Docker Compose num VPS** (ou Railway/Render/Fly com o mesmo Dockerfile) —
+  processo persistente, SSE funciona, tudo junto. É o descrito abaixo.
 
 ```
-Internet ──HTTPS──> Caddy :443 ──> api :3333 ──> Postgres :5432
-                                            └──> Redis :6379
+B)  Internet ──HTTPS──> Caddy :443 ──> api :3333 ──> Postgres :5432
+                                                └──> Redis :6379
 ```
 
 ---
@@ -97,3 +101,63 @@ gunzip -c backup-XXXX.sql.gz | docker compose --env-file .env.production \
 - Sem e-mail de convite ainda (`MAIL_TRANSPORT=console`).
 - Backups do Postgres não são automáticos — agende o `pg_dump` (cron) e mande
   para fora do VPS.
+
+---
+
+## A. Deploy na Vercel (serverless / free)
+
+### Como funciona
+
+`vercel.json` faz rewrite de **todas** as rotas para `api/index.ts`, que
+inicializa a app Nest uma vez (cache entre invocações "quentes") e repassa a
+request para a instância Fastify. O build (`npm run vercel-build`) roda
+`prisma generate && prisma migrate deploy && nest build`.
+
+### Limitações nesse modo
+
+| | |
+|---|---|
+| **SSE `/stream`** | desabilitado (retorna 501). O front deve fazer **polling** de `GET /api/activity` / `GET /api/dashboard` a cada ~15-30s |
+| **Rate limit** | `@nestjs/throttler` conta por instância — degradado, não bloqueia. Para valer: storage Redis (Upstash) |
+| **Cold start** | ~1-2s na primeira request depois de ociosa |
+| **ToS** | plano Hobby é **não-comercial** |
+| **Banco** | a Vercel não hospeda — usar **Neon** (free, com pooler) |
+| **Anexos** | disco é efêmero → **obrigatório** S3/R2 (`S3_*`). Cloudflare R2 tem 10 GB free |
+
+### Passo a passo
+
+1. **Banco** — criar projeto no [Neon](https://neon.tech). Pegar as duas strings:
+   - pooled (`...-pooler...`) → `DATABASE_URL`
+   - direta → `DIRECT_URL` (usada só pelo `migrate`)
+2. **Storage** — criar bucket no Cloudflare R2 e um token S3. Anotar endpoint,
+   bucket, access key, secret.
+3. **Importar o repo na Vercel** (New Project → seleciona `duo-finance-api`).
+   Framework Preset: **Other**. Root: raiz do repo.
+4. **Environment Variables** (Production):
+
+   ```
+   NODE_ENV=production
+   DATABASE_URL=postgresql://...-pooler.../duo_finance?sslmode=require
+   DIRECT_URL=postgresql://.../duo_finance?sslmode=require
+   JWT_ACCESS_SECRET=<48 bytes base64url>
+   JWT_REFRESH_SECRET=<48 bytes base64url>
+   CORS_ORIGINS=https://SEU-FRONT.vercel.app,capacitor://localhost,https://localhost
+   S3_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+   S3_REGION=auto
+   S3_BUCKET=duo-finance
+   S3_ACCESS_KEY_ID=...
+   S3_SECRET_ACCESS_KEY=...
+   S3_FORCE_PATH_STYLE=true
+   ```
+5. **Deploy**. Depois: `curl https://SEU-PROJETO.vercel.app/api/auth/... ` /
+   `GET https://SEU-PROJETO.vercel.app/health`.
+
+> As migrations rodam no build (inclusive em Preview Deployments — apontam para
+> o mesmo Neon a menos que você configure um banco separado por ambiente). Para
+> um projeto pequeno, ok. Se incomodar: tirar `prisma migrate deploy` do
+> `vercel-build` e rodar via GitHub Action / manualmente.
+
+### Front apontando pra API
+
+No `environment.prod.ts` do Ionic: `apiUrl: 'https://SEU-PROJETO.vercel.app/api'`.
+Não usar `/stream` — trocar por polling.

@@ -3,7 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import * as argon2 from 'argon2';
+import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IssuedTokens, TokenService } from './token.service';
 
@@ -19,7 +19,6 @@ export class AuthService {
     private readonly tokens: TokenService,
   ) {}
 
-  private readonly argonOpts: argon2.Options = { type: argon2.argon2id };
 
   async register(
     input: { name: string; email: string; password: string },
@@ -37,7 +36,7 @@ export class AuthService {
       data: {
         name: input.name,
         email: input.email,
-        passwordHash: await argon2.hash(input.password, this.argonOpts),
+        passwordHash: await argonHash(input.password),
       },
     });
 
@@ -54,7 +53,7 @@ export class AuthService {
     });
 
     const ok =
-      user && (await argon2.verify(user.passwordHash, input.password));
+      user && (await argonVerify(user.passwordHash, input.password));
     if (!user || !ok) {
       throw new UnauthorizedException('Credenciais inválidas.');
     }

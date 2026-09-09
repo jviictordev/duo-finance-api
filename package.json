@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "nest build",
+    "vercel-build": "prisma generate && prisma migrate deploy && nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
@@ -34,8 +35,8 @@
     "@nestjs/platform-fastify": "^11.0.13",
     "@nestjs/swagger": "^11.1.1",
     "@nestjs/throttler": "^6.4.0",
+    "@node-rs/argon2": "^2.2.0",
     "@prisma/client": "^6.5.0",
-    "argon2": "^0.41.1",
     "dotenv": "^17.4.2",
     "ioredis": "^5.6.0",
     "nestjs-pino": "^4.4.0",
@@ -70,7 +71,6 @@
     "@prisma/client@6.19.3": true,
     "@prisma/engines@6.19.3": true,
     "prisma@6.19.3": true,
-    "argon2@0.41.1": true,
     "sharp@0.33.5": true,
     "@swc/core@1.16.2": true,
     "esbuild@0.28.2": true
