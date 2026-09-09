@@ -24,7 +24,6 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://duo:duo@localhost:5432/duo_finance_test?schema=public
-      DIRECT_URL: postgresql://duo:duo@localhost:5432/duo_finance_test?schema=public
       JWT_ACCESS_SECRET: ci-access-secret-0000000000000000
       JWT_REFRESH_SECRET: ci-refresh-secret-000000000000000
     steps:

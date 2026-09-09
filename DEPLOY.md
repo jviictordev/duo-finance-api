@@ -126,9 +126,8 @@ request para a instância Fastify. O build (`npm run vercel-build`) roda
 
 ### Passo a passo
 
-1. **Banco** — criar projeto no [Neon](https://neon.tech). Pegar as duas strings:
-   - pooled (`...-pooler...`) → `DATABASE_URL`
-   - direta → `DIRECT_URL` (usada só pelo `migrate`)
+1. **Banco** — criar projeto no [Neon](https://neon.tech). Copiar a connection
+   string (a com `-pooler` serve para runtime **e** para o `migrate`).
 2. **Storage** — no projeto da Vercel, aba **Storage → Create → Blob**. Ao
    conectar ao projeto, a env `BLOB_READ_WRITE_TOKEN` é injetada automaticamente.
 3. **Importar o repo na Vercel** (New Project → seleciona `duo-finance-api`).
@@ -138,7 +137,6 @@ request para a instância Fastify. O build (`npm run vercel-build`) roda
    ```
    NODE_ENV=production
    DATABASE_URL=postgresql://...-pooler.../neondb?sslmode=require
-   DIRECT_URL=postgresql://.../neondb?sslmode=require
    JWT_ACCESS_SECRET=<48 bytes base64url>
    JWT_REFRESH_SECRET=<48 bytes base64url>
    CORS_ORIGINS=https://SEU-FRONT.vercel.app,capacitor://localhost,https://localhost

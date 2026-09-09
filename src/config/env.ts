@@ -22,7 +22,6 @@ export const envSchema = z.object({
     ),
 
   DATABASE_URL: z.string().url(),
-  DIRECT_URL: z.string().url().optional(),
   REDIS_URL: z.string().url().optional(),
 
   JWT_ACCESS_SECRET: z.string().min(16),
