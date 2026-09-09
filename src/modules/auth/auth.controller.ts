@@ -52,9 +52,13 @@ export class AuthController {
     return this.auth.refresh(dto.refreshToken, metaOf(req));
   }
 
+  @Public()
   @Post('logout')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Revoga a família do refresh token informado' })
+  @ApiOperation({
+    summary:
+      'Revoga a família do refresh token informado (público: dispensa access token válido)',
+  })
   async logout(@Body() dto: RefreshDto): Promise<void> {
     await this.auth.logout(dto.refreshToken);
   }

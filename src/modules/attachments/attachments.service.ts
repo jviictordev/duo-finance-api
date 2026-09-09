@@ -1,8 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AttachmentKind } from '@prisma/client';
 import sharp from 'sharp';
 import { PrismaService } from '../../prisma/prisma.service';
-import { StorageService } from './storage.service';
+import { Storage, STORAGE } from './storage.service';
 
 const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 
@@ -10,7 +15,7 @@ const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/p
 export class AttachmentsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: StorageService,
+    @Inject(STORAGE) private readonly storage: Storage,
   ) {}
 
   async upload(
@@ -26,7 +31,7 @@ export class AttachmentsService {
     }
 
     const key = this.storage.keyFor(spaceId, file.filename);
-    await this.storage.put(key, file.buffer);
+    await this.storage.put(key, file.buffer, file.mimetype);
 
     let thumbKey: string | null = null;
     if (file.mimetype.startsWith('image/')) {
@@ -36,7 +41,7 @@ export class AttachmentsService {
           .webp({ quality: 70 })
           .toBuffer();
         thumbKey = `${key}.thumb.webp`;
-        await this.storage.put(thumbKey, thumb);
+        await this.storage.put(thumbKey, thumb, 'image/webp');
       } catch {
         thumbKey = null;
       }

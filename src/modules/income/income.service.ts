@@ -63,6 +63,9 @@ export class IncomeService {
           userId: s.userId,
           label: s.label,
           kind: s.kind,
+          applyInss: s.applyInss,
+          applyIrrf: s.applyIrrf,
+          dependents: s.dependents,
           ...net,
         };
       }),

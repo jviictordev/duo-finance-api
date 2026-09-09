@@ -14,7 +14,7 @@ API do Duo Finance — finanças compartilhadas de uma dupla.
 | Dinheiro | `BigInt` centavos + `Money` value object; JSON sempre em string de centavos |
 | Realtime | SSE (`GET /stream`) — pub/sub Redis pendente para multi-instância |
 | Logs / Docs | `nestjs-pino` / Swagger em `/docs` (dev) |
-| Storage anexos | disco local hoje; interface pronta para S3/R2/MinIO |
+| Storage anexos | S3/R2/MinIO quando as chaves `S3_*` estão definidas; senão disco local (dev) |
 | Deploy | Docker Compose + Caddy (TLS automático) no VPS; CI em GitHub Actions |
 
 ## Setup local
@@ -92,7 +92,6 @@ Origens do Capacitor já liberadas por padrão: `capacitor://localhost`,
 
 - Reações (modelo existe; sem endpoints — decisão do produto)
 - Redis pub/sub no SSE para múltiplas instâncias
-- Storage S3/R2 real (interface já isolada em `StorageService`)
 - `GET /quick-expenses` (atalhos de gastos recorrentes)
 - Introspecção dos schemas Zod no Swagger
-- Envio de e-mail de convite
+- Envio de e-mail de convite (hoje o token volta na resposta)
