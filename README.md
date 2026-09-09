@@ -15,7 +15,7 @@ API do Duo Finance — finanças compartilhadas de uma dupla.
 | Realtime | SSE (`GET /stream`) — pub/sub Redis pendente para multi-instância |
 | Logs / Docs | `nestjs-pino` / Swagger em `/docs` (dev) |
 | Storage anexos | S3/R2/MinIO quando as chaves `S3_*` estão definidas; senão disco local (dev) |
-| Deploy | Docker Compose + Caddy (TLS automático) no VPS; CI em GitHub Actions |
+| Deploy | Docker Compose + Caddy (TLS automático) no VPS; CI em GitHub Actions — ver [DEPLOY.md](DEPLOY.md) |
 
 ## Setup local
 

@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -23,8 +24,8 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://duo:duo@localhost:5432/duo_finance_test?schema=public
-      JWT_ACCESS_SECRET: ci-access-secret-000000000000
-      JWT_REFRESH_SECRET: ci-refresh-secret-00000000000
+      JWT_ACCESS_SECRET: ci-access-secret-0000000000000000
+      JWT_REFRESH_SECRET: ci-refresh-secret-000000000000000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,18 +33,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx prisma migrate deploy
       - run: npx prisma generate
+      - run: npx prisma migrate deploy
       - run: npm run lint
       - run: npm run build
       - run: npm test
 
-  deploy:
+  docker:
     needs: test
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Build image (valida o Dockerfile)
+        run: docker build -t duo-finance-api:ci .
+
+  deploy:
+    needs: [test, docker]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency: deploy-prod
+    steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -51,7 +60,10 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -e
             cd ${{ secrets.DEPLOY_PATH }}
-            git pull --ff-only
-            docker compose -f docker-compose.prod.yml up -d --build
+            git fetch --all
+            git reset --hard origin/main
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+            docker compose --env-file .env.production -f docker-compose.prod.yml ps
             docker image prune -f

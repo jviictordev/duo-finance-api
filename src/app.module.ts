@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -29,12 +29,13 @@ import { HealthModule } from './modules/health/health.module';
       envFilePath: ['.env.local', '.env'],
     }),
     LoggerModule.forRoot({
+      exclude: [{ method: RequestMethod.ALL, path: 'health' }],
       pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
         transport:
           process.env.NODE_ENV !== 'production'
             ? { target: 'pino-pretty', options: { singleLine: true } }
             : undefined,
-        autoLogging: true,
         redact: ['req.headers.authorization', 'req.headers.cookie'],
       },
     }),

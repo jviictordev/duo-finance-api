@@ -1,11 +1,15 @@
 node_modules
 dist
 .git
+.github
 .env
 .env.*
-!.env.example
 storage
 coverage
 *.log
 .vscode
 .idea
+test
+**/*.spec.ts
+DEPLOY.md
+README.md

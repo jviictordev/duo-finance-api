@@ -1,5 +1,9 @@
-# Deploy no VPS: docker compose -f docker-compose.prod.yml up -d
-# Caddy termina TLS automaticamente (Let's Encrypt) para o domínio em CADDY_SITE.
+# Deploy no VPS:
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+# O --env-file alimenta a interpolação ${...} deste arquivo; o serviço `api`
+# também carrega o mesmo arquivo como env do container (env_file abaixo).
+# Caddy emite TLS automaticamente (Let's Encrypt) para o domínio em CADDY_SITE.
+
 services:
   api:
     build: .
@@ -8,29 +12,55 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - storage:/app/storage
     expose:
       - '3333'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3333/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
 
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-duo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina no ambiente}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina em .env.production}
       POSTGRES_DB: ${POSTGRES_DB:-duo_finance}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-duo}']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-duo} -d ${POSTGRES_DB:-duo_finance}']
       interval: 5s
       timeout: 5s
       retries: 10
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   caddy:
     image: caddy:2-alpine
@@ -45,10 +75,12 @@ services:
       - caddydata:/data
       - caddyconfig:/config
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
+  redisdata:
   storage:
   caddydata:
   caddyconfig:

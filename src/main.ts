@@ -45,6 +45,8 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api', { exclude: ['health', 'stream'] });
 
+  app.enableShutdownHooks();
+
   if (config.get('NODE_ENV', { infer: true }) !== 'production') {
     // TODO: introspecção dos schemas zod no Swagger (patch quebrado no
     // nestjs-zod@4 + @nestjs/swagger@11). Rotas e tags já aparecem em /docs.
