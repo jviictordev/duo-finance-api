@@ -49,7 +49,11 @@ jobs:
 
   deploy:
     needs: [test, docker]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # só roda quando os secrets de deploy estão configurados
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     concurrency: deploy-prod
     steps:

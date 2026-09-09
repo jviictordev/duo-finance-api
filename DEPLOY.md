@@ -43,7 +43,9 @@ curl -s https://api.SEUDOMINIO/health      # {"status":"ok","db":"ok",...}
 ## 3. Deploy contínuo (GitHub Actions)
 
 `.github/workflows/ci.yml` → job `deploy` roda em push na `main` (depois de
-`test` + build da imagem). Configure os **secrets** do repositório:
+`test` + build da imagem), **somente se a variável `DEPLOY_ENABLED` = `true`**
+(Settings → Secrets and variables → Actions → Variables). Configure também os
+**secrets** do repositório:
 
 | Secret | Valor |
 |---|---|
