@@ -1,0 +1,11 @@
+{$CADDY_SITE} {
+	encode gzip
+
+	# SSE precisa de resposta sem buffer
+	@sse path /stream*
+	reverse_proxy @sse api:3333 {
+		flush_interval -1
+	}
+
+	reverse_proxy api:3333
+}

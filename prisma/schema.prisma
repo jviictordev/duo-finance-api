@@ -1,0 +1,544 @@
+// Duo Finance — schema Prisma
+// Convenções:
+// - Dinheiro sempre em centavos: BigInt (amountCents). Nunca Float.
+// - IDs: cuid.
+// - Datas de "quando aconteceu" separadas de createdAt/updatedAt.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Identidade
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships       SpaceMember[]
+  refreshTokens     RefreshToken[]
+  sentInvitations   Invitation[]            @relation("InvitationInviter")
+  transactions      Transaction[]           @relation("TransactionCreatedBy")
+  ownedTransactions Transaction[]           @relation("TransactionOwner")
+  fundMovements     EmergencyFundMovement[]
+  comments          Comment[]
+  reactions         Reaction[]
+  activityEvents    ActivityEvent[]         @relation("ActivityActor")
+  incomeSources     IncomeSource[]
+  attachments       Attachment[]
+  closedMonths      MonthClosing[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique // hash do refresh token (nunca o valor cru)
+  familyId   String // rotação: todos os tokens de uma sessão compartilham a família
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String? // id do token que substituiu este (detecção de reuso)
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Espaço compartilhado (a "dupla")
+// ─────────────────────────────────────────────────────────────
+
+model Space {
+  id        String   @id @default(cuid())
+  name      String   @default("Nosso espaço")
+  sinceDate DateTime @default(now()) // "juntos desde ..."
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members           SpaceMember[]
+  invitations       Invitation[]
+  accounts          Account[]
+  categories        Category[]
+  transactions      Transaction[]
+  installmentPlans  InstallmentPlan[]
+  recurringAccounts RecurringAccount[]
+  emergencyFund     EmergencyFund?
+  monthClosings     MonthClosing[]
+  activityEvents    ActivityEvent[]
+  attachments       Attachment[]
+  comments          Comment[]
+
+  @@map("spaces")
+}
+
+enum SpaceRole {
+  OWNER
+  MEMBER
+}
+
+model SpaceMember {
+  id       String    @id @default(cuid())
+  spaceId  String
+  space    Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     SpaceRole @default(MEMBER)
+  joinedAt DateTime  @default(now())
+
+  @@unique([spaceId, userId])
+  @@index([userId])
+  @@map("space_members")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+model Invitation {
+  id         String           @id @default(cuid())
+  spaceId    String
+  space      Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  inviterId  String
+  inviter    User             @relation("InvitationInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  email      String
+  tokenHash  String           @unique
+  status     InvitationStatus @default(PENDING)
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([spaceId])
+  @@map("invitations")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Contas / carteiras e categorias
+// ─────────────────────────────────────────────────────────────
+
+enum AccountKind {
+  CASH
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+  WALLET
+}
+
+model Account {
+  id                  String      @id @default(cuid())
+  spaceId             String
+  space               Space       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name                String
+  kind                AccountKind @default(CHECKING)
+  // saldo inicial; saldo atual é derivado (inicial + soma de transações)
+  openingBalanceCents BigInt      @default(0)
+  color               String?
+  archivedAt          DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  transactions      Transaction[]
+  recurringAccounts RecurringAccount[]
+
+  @@index([spaceId])
+  @@map("accounts")
+}
+
+enum CategoryKind {
+  INCOME
+  EXPENSE
+}
+
+model Category {
+  id         String       @id @default(cuid())
+  spaceId    String
+  space      Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name       String
+  kind       CategoryKind @default(EXPENSE)
+  // "essencial" vs "supérfluo" — usado em relatórios/dashboard
+  essential  Boolean      @default(true)
+  icon       String?
+  color      String?
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  transactions      Transaction[]
+  recurringAccounts RecurringAccount[]
+
+  @@index([spaceId])
+  @@map("categories")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Transações
+// ─────────────────────────────────────────────────────────────
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum PaymentMethod {
+  CASH
+  DEBIT
+  CREDIT
+  PIX
+  OTHER
+}
+
+// Visibilidade: ambos SEMPRE enxergam a transação.
+// SHARED entra nos totais "do casal"; PRIVATE entra só nos totais individuais do owner.
+enum TransactionVisibility {
+  SHARED
+  PRIVATE
+}
+
+model Transaction {
+  id          String                @id @default(cuid())
+  spaceId     String
+  space       Space                 @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  amountCents BigInt // sempre positivo; o sinal vem de `type`
+  description String
+  occurredAt  DateTime // quando o gasto/entrada aconteceu (data escolhida no modal)
+  visibility  TransactionVisibility @default(SHARED)
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id])
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("TransactionCreatedBy", fields: [createdById], references: [id])
+
+  // owner só importa quando visibility = PRIVATE (default = createdBy)
+  ownerId String?
+  owner   User?   @relation("TransactionOwner", fields: [ownerId], references: [id])
+
+  paymentMethod PaymentMethod @default(DEBIT)
+  needsDetail   Boolean       @default(false) // "a detalhar"
+
+  // conta fixa que originou este lançamento (quando pago via /recurring-accounts/:id/pay)
+  recurringAccountId String?
+  recurringAccount   RecurringAccount? @relation(fields: [recurringAccountId], references: [id])
+
+  // parcelamento: cada parcela é uma Transaction filha
+  installmentPlanId String?
+  installmentPlan   InstallmentPlan? @relation(fields: [installmentPlanId], references: [id])
+  installmentNumber Int? // 1..N
+
+  attachmentId String?     @unique
+  attachment   Attachment? @relation(fields: [attachmentId], references: [id])
+
+  // par de transferência (a "perna" oposta)
+  transferPairId String?      @unique
+  transferPair   Transaction? @relation("TransferPair", fields: [transferPairId], references: [id])
+  transferPairOf Transaction? @relation("TransferPair")
+
+  comments  Comment[]
+  reactions Reaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([spaceId, occurredAt])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([installmentPlanId])
+  @@map("transactions")
+}
+
+model InstallmentPlan {
+  id                String        @id @default(cuid())
+  spaceId           String
+  space             Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  description       String
+  totalCents        BigInt
+  installmentsCount Int
+  firstDueDate      DateTime
+  paymentMethod     PaymentMethod @default(CREDIT)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  installments Transaction[]
+
+  @@index([spaceId])
+  @@map("installment_plans")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Contas fixas / recorrentes
+// ─────────────────────────────────────────────────────────────
+
+enum RecurrenceKind {
+  FIXED // conta fixa perpétua (aluguel, assinatura)
+  INSTALLMENT // parcelamento com fim (financiamento, compra parcelada acompanhada)
+}
+
+model RecurringAccount {
+  id          String         @id @default(cuid())
+  spaceId     String
+  space       Space          @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  label       String
+  kind        RecurrenceKind @default(FIXED)
+  amountCents BigInt // valor da parcela/mensalidade
+  dueDay      Int // dia do vencimento (1..28)
+
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id])
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  // preenchidos quando kind = INSTALLMENT
+  installmentsCount Int?
+  installmentsPaid  Int?      @default(0)
+  startDate         DateTime?
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  payments Transaction[]
+
+  @@index([spaceId])
+  @@map("recurring_accounts")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Reserva de emergência
+// ─────────────────────────────────────────────────────────────
+
+model EmergencyFund {
+  id          String   @id @default(cuid())
+  spaceId     String   @unique
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  targetCents BigInt   @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  movements EmergencyFundMovement[]
+
+  @@map("emergency_funds")
+}
+
+enum FundMovementKind {
+  MANUAL
+  AUTO_CLOSING // aporte automático gerado pelo fechamento de mês
+}
+
+model EmergencyFundMovement {
+  id          String           @id @default(cuid())
+  fundId      String
+  fund        EmergencyFund    @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  amountCents BigInt // COM sinal: + aporte, - retirada
+  kind        FundMovementKind @default(MANUAL)
+  note        String?
+  createdById String
+  createdBy   User             @relation(fields: [createdById], references: [id])
+  occurredAt  DateTime         @default(now())
+  createdAt   DateTime         @default(now())
+
+  // vínculo com o fechamento que gerou o aporte automático
+  monthClosingId String?       @unique
+  monthClosing   MonthClosing? @relation(fields: [monthClosingId], references: [id])
+
+  @@index([fundId])
+  @@map("emergency_fund_movements")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Fechamento de mês (snapshot congelado)
+// ─────────────────────────────────────────────────────────────
+
+model MonthClosing {
+  id                String   @id @default(cuid())
+  spaceId           String
+  space             Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  month             String // "YYYY-MM"
+  netIncomeCents    BigInt
+  spentCents        BigInt
+  leftoverCents     BigInt // netIncome - spent
+  contributionCents BigInt // quanto foi pra reserva
+  byCategory        Json // [{ categoryId, name, essential, spentCents }]
+  closedById        String
+  closedBy          User     @relation(fields: [closedById], references: [id])
+  closedAt          DateTime @default(now())
+
+  fundMovement EmergencyFundMovement?
+
+  @@unique([spaceId, month])
+  @@map("month_closings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Renda + tabelas de imposto com vigência
+// ─────────────────────────────────────────────────────────────
+
+enum IncomeKind {
+  FIXED
+  VARIABLE // média dos últimos 3 meses
+}
+
+model IncomeSource {
+  id                String     @id @default(cuid())
+  userId            String
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label             String
+  kind              IncomeKind @default(FIXED)
+  grossCents        BigInt     @default(0) // para FIXED
+  // para VARIABLE: base calculada a partir do histórico; cache opcional
+  computedBaseCents BigInt?
+  applyInss         Boolean    @default(true)
+  applyIrrf         Boolean    @default(true)
+  dependents        Int        @default(0)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([userId])
+  @@map("income_sources")
+}
+
+enum TaxType {
+  INSS
+  IRRF
+}
+
+model TaxTable {
+  id                         String    @id @default(cuid())
+  type                       TaxType
+  effectiveFrom              DateTime // vigência inicial
+  effectiveTo                DateTime? // null = vigente
+  // brackets: [{ upToCents: number|null, rate: number, deductionCents?: number }]
+  brackets                   Json
+  // dedução por dependente (IRRF)
+  perDependentDeductionCents BigInt    @default(0)
+  createdAt                  DateTime  @default(now())
+
+  @@index([type, effectiveFrom])
+  @@map("tax_tables")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Anexos (recibos)
+// ─────────────────────────────────────────────────────────────
+
+enum AttachmentKind {
+  RECEIPT
+  OTHER
+}
+
+model Attachment {
+  id           String         @id @default(cuid())
+  spaceId      String
+  space        Space          @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User           @relation(fields: [uploadedById], references: [id])
+  kind         AttachmentKind @default(RECEIPT)
+  storageKey   String // chave no bucket S3/R2/MinIO
+  thumbKey     String?
+  mime         String
+  sizeBytes    Int
+  createdAt    DateTime       @default(now())
+
+  transaction Transaction?
+
+  @@index([spaceId])
+  @@map("attachments")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Comentários + reações (reações: modelo pronto, sem endpoints no MVP)
+// ─────────────────────────────────────────────────────────────
+
+enum CommentSubjectType {
+  TRANSACTION
+}
+
+model Comment {
+  id          String             @id @default(cuid())
+  spaceId     String
+  space       Space              @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  subjectType CommentSubjectType @default(TRANSACTION)
+  subjectId   String
+  transaction Transaction?       @relation(fields: [subjectId], references: [id], onDelete: Cascade, map: "comments_transaction_fkey")
+  authorId    String
+  author      User               @relation(fields: [authorId], references: [id])
+  body        String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([subjectType, subjectId])
+  @@index([spaceId])
+  @@map("comments")
+}
+
+enum ReactionSubjectType {
+  TRANSACTION
+}
+
+model Reaction {
+  id          String              @id @default(cuid())
+  subjectType ReactionSubjectType @default(TRANSACTION)
+  subjectId   String
+  transaction Transaction?        @relation(fields: [subjectId], references: [id], onDelete: Cascade, map: "reactions_transaction_fkey")
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji       String
+  createdAt   DateTime            @default(now())
+
+  @@unique([subjectType, subjectId, userId, emoji])
+  @@index([subjectType, subjectId])
+  @@map("reactions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Feed de atividade (append-only)
+// ─────────────────────────────────────────────────────────────
+
+enum ActivityType {
+  TRANSACTION_CREATED
+  TRANSACTION_UPDATED
+  COMMENT_CREATED
+  FUND_CONTRIBUTION
+  FUND_WITHDRAWAL
+  MONTH_CLOSED
+  MEMBER_JOINED
+}
+
+model ActivityEvent {
+  id        String       @id @default(cuid())
+  spaceId   String
+  space     Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  type      ActivityType
+  actorId   String?
+  actor     User?        @relation("ActivityActor", fields: [actorId], references: [id])
+  // payload renderizável pelo front: { text, amountCents?, transactionId?, ... }
+  payload   Json
+  createdAt DateTime     @default(now())
+
+  @@index([spaceId, createdAt])
+  @@map("activity_events")
+}

@@ -1,0 +1,54 @@
+# Deploy no VPS: docker compose -f docker-compose.prod.yml up -d
+# Caddy termina TLS automaticamente (Let's Encrypt) para o domínio em CADDY_SITE.
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - storage:/app/storage
+    expose:
+      - '3333'
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-duo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina no ambiente}
+      POSTGRES_DB: ${POSTGRES_DB:-duo_finance}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-duo}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      CADDY_SITE: ${CADDY_SITE:?ex.: api.duofinance.app}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  storage:
+  caddydata:
+  caddyconfig:
