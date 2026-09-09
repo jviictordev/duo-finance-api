@@ -31,7 +31,7 @@ export class AttachmentsService {
     }
 
     const key = this.storage.keyFor(spaceId, file.filename);
-    await this.storage.put(key, file.buffer, file.mimetype);
+    const storageKey = await this.storage.put(key, file.buffer, file.mimetype);
 
     let thumbKey: string | null = null;
     if (file.mimetype.startsWith('image/')) {
@@ -40,8 +40,11 @@ export class AttachmentsService {
           .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
           .webp({ quality: 70 })
           .toBuffer();
-        thumbKey = `${key}.thumb.webp`;
-        await this.storage.put(thumbKey, thumb, 'image/webp');
+        thumbKey = await this.storage.put(
+          `${key}.thumb.webp`,
+          thumb,
+          'image/webp',
+        );
       } catch {
         thumbKey = null;
       }
@@ -52,7 +55,7 @@ export class AttachmentsService {
         spaceId,
         uploadedById: userId,
         kind: AttachmentKind.RECEIPT,
-        storageKey: key,
+        storageKey,
         thumbKey,
         mime: file.mimetype,
         sizeBytes: file.buffer.byteLength,

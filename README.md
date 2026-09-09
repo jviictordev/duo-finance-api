@@ -14,15 +14,15 @@ API do Duo Finance — finanças compartilhadas de uma dupla.
 | Dinheiro | `BigInt` centavos + `Money` value object; JSON sempre em string de centavos |
 | Realtime | SSE (`GET /stream`) — pub/sub Redis pendente para multi-instância |
 | Logs / Docs | `nestjs-pino` / Swagger em `/docs` (dev) |
-| Storage anexos | S3/R2/MinIO quando as chaves `S3_*` estão definidas; senão disco local (dev) |
+| Storage anexos | Vercel Blob quando `BLOB_READ_WRITE_TOKEN` está definido; senão disco local (dev) |
 | Deploy | Vercel (serverless, sem SSE) **ou** Docker Compose + Caddy no VPS / Railway / Render — ver [DEPLOY.md](DEPLOY.md) |
 
 ## Setup local
 
-Pré-requisito: PostgreSQL (e opcionalmente Redis/MinIO). Com Docker:
+Pré-requisito: PostgreSQL (e opcionalmente Redis). Com Docker:
 
 ```bash
-docker compose up -d          # postgres + redis + minio
+docker compose up -d          # postgres + redis
 cp .env.example .env          # ajuste os segredos
 npm install
 npx prisma migrate deploy     # aplica prisma/migrations

@@ -1,22 +1,23 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { del as blobDel, put as blobPut } from '@vercel/blob';
 import { Env } from '../../config/env';
 
 export const STORAGE = Symbol('STORAGE');
 
 export interface Storage {
-  put(key: string, data: Buffer, contentType?: string): Promise<void>;
+  /**
+   * Faz o upload e devolve a **chave a persistir** no banco
+   * (caminho relativo no disco, ou a URL pública no Vercel Blob).
+   */
+  put(key: string, data: Buffer, contentType?: string): Promise<string>;
+  /** Lê os bytes a partir da chave persistida. */
   get(key: string): Promise<Buffer>;
   delete(key: string): Promise<void>;
+  /** Gera um pathname único para um novo arquivo. */
   keyFor(spaceId: string, filename: string): string;
 }
 
@@ -40,10 +41,11 @@ export class DiskStorage implements Storage {
     return join(this.root, clean);
   }
 
-  async put(key: string, data: Buffer): Promise<void> {
+  async put(key: string, data: Buffer): Promise<string> {
     const path = this.safePath(key);
     await mkdir(join(path, '..'), { recursive: true });
     await writeFile(path, data);
+    return key;
   }
 
   get(key: string): Promise<Buffer> {
@@ -63,42 +65,37 @@ export class DiskStorage implements Storage {
   }
 }
 
-/** S3 compatível: AWS S3, Cloudflare R2 ou MinIO (S3_* no .env). */
-export class S3Storage implements Storage {
-  private readonly logger = new Logger(S3Storage.name);
+/**
+ * Vercel Blob (BLOB_READ_WRITE_TOKEN). A chave persistida é a URL pública
+ * retornada pelo `put` — os bytes são relidos via `fetch` para manter o
+ * controle de acesso na API (o front nunca recebe a URL do Blob direto).
+ */
+export class VercelBlobStorage implements Storage {
+  private readonly logger = new Logger(VercelBlobStorage.name);
 
-  constructor(
-    private readonly client: S3Client,
-    private readonly bucket: string,
-  ) {}
+  constructor(private readonly token: string) {}
 
-  async put(key: string, data: Buffer, contentType?: string): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: data,
-        ContentType: contentType,
-      }),
-    );
+  async put(key: string, data: Buffer, contentType?: string): Promise<string> {
+    const blob = await blobPut(key, data, {
+      access: 'public',
+      token: this.token,
+      addRandomSuffix: true,
+      contentType,
+    });
+    return blob.url;
   }
 
-  async get(key: string): Promise<Buffer> {
-    const res = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
-    const bytes = await res.Body?.transformToByteArray();
-    if (!bytes) throw new Error(`Objeto vazio: ${key}`);
-    return Buffer.from(bytes);
+  async get(url: string): Promise<Buffer> {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Blob ${res.status} em ${url}`);
+    return Buffer.from(await res.arrayBuffer());
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(url: string): Promise<void> {
     try {
-      await this.client.send(
-        new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
+      await blobDel(url, { token: this.token });
     } catch (err) {
-      this.logger.warn(`Falha ao remover ${key}: ${String(err)}`);
+      this.logger.warn(`Falha ao remover ${url}: ${String(err)}`);
     }
   }
 
@@ -108,28 +105,19 @@ export class S3Storage implements Storage {
 }
 
 /**
- * Escolhe a implementação: se S3_ENDPOINT + S3_BUCKET + credenciais estiverem
- * definidos, usa S3; caso contrário, disco local.
+ * Seleção automática: `BLOB_READ_WRITE_TOKEN` presente → Vercel Blob;
+ * senão, disco local.
  */
 export function createStorage(config: ConfigService<Env, true>): Storage {
-  const endpoint = config.get('S3_ENDPOINT', { infer: true });
-  const bucket = config.get('S3_BUCKET', { infer: true });
-  const accessKeyId = config.get('S3_ACCESS_KEY_ID', { infer: true });
-  const secretAccessKey = config.get('S3_SECRET_ACCESS_KEY', { infer: true });
+  const token = config.get('BLOB_READ_WRITE_TOKEN', { infer: true });
 
-  if (endpoint && bucket && accessKeyId && secretAccessKey) {
-    const client = new S3Client({
-      region: config.get('S3_REGION', { infer: true }),
-      endpoint,
-      forcePathStyle: config.get('S3_FORCE_PATH_STYLE', { infer: true }),
-      credentials: { accessKeyId, secretAccessKey },
-    });
-    new Logger('Storage').log(`S3 storage ativo (bucket ${bucket})`);
-    return new S3Storage(client, bucket);
+  if (token) {
+    new Logger('Storage').log('Vercel Blob ativo');
+    return new VercelBlobStorage(token);
   }
 
   new Logger('Storage').warn(
-    'S3 não configurado — usando disco local (anexos somem a cada deploy).',
+    'BLOB_READ_WRITE_TOKEN ausente — usando disco local (anexos somem a cada deploy).',
   );
   return new DiskStorage();
 }

@@ -1,5 +1,6 @@
 # Dependências para desenvolvimento local. Suba com: docker compose up -d
 # A API roda no host (npm run start:dev) apontando para estes serviços.
+# Anexos em dev vão pra disco local (storage/); em produção, Vercel Blob.
 services:
   postgres:
     image: postgres:16-alpine
@@ -24,20 +25,5 @@ services:
     ports:
       - '6379:6379'
 
-  # storage de anexos compatível com S3 (opcional — o fallback é disco local)
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - '9000:9000'
-      - '9001:9001'
-    volumes:
-      - miniodata:/data
-
 volumes:
   pgdata:
-  miniodata:

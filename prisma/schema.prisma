@@ -463,7 +463,7 @@ model Attachment {
   uploadedById String
   uploadedBy   User           @relation(fields: [uploadedById], references: [id])
   kind         AttachmentKind @default(RECEIPT)
-  storageKey   String // chave no bucket S3/R2/MinIO
+  storageKey   String // caminho no disco (dev) ou URL do Vercel Blob (prod)
   thumbKey     String?
   mime         String
   sizeBytes    Int

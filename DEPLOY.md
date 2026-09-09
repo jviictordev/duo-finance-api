@@ -20,7 +20,8 @@ B)  Internet ──HTTPS──> Caddy :443 ──> api :3333 ──> Postgres :5
 - Portas 80 e 443 abertas
 - Um domínio apontando para o IP do VPS:
   - `api.SEUDOMINIO` → A record para o VPS (usado pelo Caddy / `CADDY_SITE`)
-- Bucket S3/R2 criado para os anexos (Cloudflare R2 recomendado)
+- (opcional) um Blob Store da Vercel para os anexos — sem ele, anexos ficam no
+  volume `storage` do container (persistem entre deploys, mas só nesse VPS)
 
 ## 2. Primeiro deploy (manual)
 
@@ -68,8 +69,7 @@ O `.env.production` **fica só no VPS** (não é versionado).
 | `CORS_ORIGINS` | domínio(s) do front em produção + origens do Capacitor |
 | `POSTGRES_PASSWORD` / `DATABASE_URL` | mesma senha nos dois; host = `postgres` |
 | `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
-| `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | R2/S3 — **obrigatório**, senão anexos vão pra disco e somem no redeploy |
-| `S3_PUBLIC_URL` | base pública do bucket (se for servir direto) |
+| `BLOB_READ_WRITE_TOKEN` | (opcional) token de um Blob Store da Vercel; sem ele os anexos ficam no volume `storage` |
 | `CADDY_SITE` | domínio da API (ex.: `api.duofinance.app`) |
 | `MAIL_TRANSPORT` | `console` até ter SMTP; convite volta na resposta da API |
 
@@ -122,32 +122,27 @@ request para a instância Fastify. O build (`npm run vercel-build`) roda
 | **Cold start** | ~1-2s na primeira request depois de ociosa |
 | **ToS** | plano Hobby é **não-comercial** |
 | **Banco** | a Vercel não hospeda — usar **Neon** (free, com pooler) |
-| **Anexos** | disco é efêmero → **obrigatório** S3/R2 (`S3_*`). Cloudflare R2 tem 10 GB free |
+| **Anexos** | disco é efêmero → usar **Vercel Blob** (`BLOB_READ_WRITE_TOKEN`) |
 
 ### Passo a passo
 
 1. **Banco** — criar projeto no [Neon](https://neon.tech). Pegar as duas strings:
    - pooled (`...-pooler...`) → `DATABASE_URL`
    - direta → `DIRECT_URL` (usada só pelo `migrate`)
-2. **Storage** — criar bucket no Cloudflare R2 e um token S3. Anotar endpoint,
-   bucket, access key, secret.
+2. **Storage** — no projeto da Vercel, aba **Storage → Create → Blob**. Ao
+   conectar ao projeto, a env `BLOB_READ_WRITE_TOKEN` é injetada automaticamente.
 3. **Importar o repo na Vercel** (New Project → seleciona `duo-finance-api`).
    Framework Preset: **Other**. Root: raiz do repo.
 4. **Environment Variables** (Production):
 
    ```
    NODE_ENV=production
-   DATABASE_URL=postgresql://...-pooler.../duo_finance?sslmode=require
-   DIRECT_URL=postgresql://.../duo_finance?sslmode=require
+   DATABASE_URL=postgresql://...-pooler.../neondb?sslmode=require
+   DIRECT_URL=postgresql://.../neondb?sslmode=require
    JWT_ACCESS_SECRET=<48 bytes base64url>
    JWT_REFRESH_SECRET=<48 bytes base64url>
    CORS_ORIGINS=https://SEU-FRONT.vercel.app,capacitor://localhost,https://localhost
-   S3_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
-   S3_REGION=auto
-   S3_BUCKET=duo-finance
-   S3_ACCESS_KEY_ID=...
-   S3_SECRET_ACCESS_KEY=...
-   S3_FORCE_PATH_STYLE=true
+   # BLOB_READ_WRITE_TOKEN — injetada pelo Blob Store, não precisa colar
    ```
 5. **Deploy**. Depois: `curl https://SEU-PROJETO.vercel.app/api/auth/... ` /
    `GET https://SEU-PROJETO.vercel.app/health`.

@@ -31,13 +31,8 @@ export const envSchema = z.object({
   JWT_REFRESH_TTL: z.string().default('30d'),
   STREAM_TOKEN_TTL: z.string().default('60s'),
 
-  S3_ENDPOINT: z.string().url().optional(),
-  S3_REGION: z.string().default('auto'),
-  S3_BUCKET: z.string().optional(),
-  S3_ACCESS_KEY_ID: z.string().optional(),
-  S3_SECRET_ACCESS_KEY: z.string().optional(),
-  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
-  S3_PUBLIC_URL: z.string().url().optional(),
+  // storage de anexos: com o token, usa Vercel Blob; sem ele, disco local
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
 
   MAIL_FROM: z.string().default('Duo Finance <no-reply@duofinance.app>'),
   MAIL_TRANSPORT: z.enum(['console', 'smtp']).default('console'),
