@@ -40,7 +40,14 @@ export const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 export function validateEnv(config: Record<string, unknown>): Env {
-  const parsed = envSchema.safeParse(config);
+  // Env vars vazias (comuns em plataformas como a Vercel) devem contar como
+  // ausentes — senão o `.default()`/`.optional()` do Zod não é aplicado.
+  const cleaned = Object.fromEntries(
+    Object.entries(config).filter(
+      ([, v]) => v !== '' && v !== undefined && v !== null,
+    ),
+  );
+  const parsed = envSchema.safeParse(cleaned);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
