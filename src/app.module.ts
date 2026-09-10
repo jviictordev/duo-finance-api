@@ -1,9 +1,9 @@
 import { Module, RequestMethod } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
-import { validateEnv } from './config/env';
+import { Env, validateEnv } from './config/env';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
@@ -28,15 +28,25 @@ import { HealthModule } from './modules/health/health.module';
       validate: validateEnv,
       envFilePath: ['.env.local', '.env'],
     }),
-    LoggerModule.forRoot({
-      exclude: [{ method: RequestMethod.ALL, path: 'health' }],
-      pinoHttp: {
-        level: process.env.LOG_LEVEL ?? 'info',
-        transport:
-          process.env.NODE_ENV !== 'production'
-            ? { target: 'pino-pretty', options: { singleLine: true } }
-            : undefined,
-        redact: ['req.headers.authorization', 'req.headers.cookie'],
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => {
+        // pino-pretty é devDependency — só liga em dev local, nunca em
+        // serverless/CI (onde não está instalado e derrubaria o processo)
+        const pretty =
+          config.get('NODE_ENV', { infer: true }) === 'development' &&
+          !process.env.VERCEL &&
+          !process.env.CI;
+        return {
+          exclude: [{ method: RequestMethod.ALL, path: 'health' }],
+          pinoHttp: {
+            level: config.get('LOG_LEVEL', { infer: true }),
+            transport: pretty
+              ? { target: 'pino-pretty', options: { singleLine: true } }
+              : undefined,
+            redact: ['req.headers.authorization', 'req.headers.cookie'],
+          },
+        };
       },
     }),
     ThrottlerModule.forRoot([

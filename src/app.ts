@@ -49,7 +49,10 @@ export async function createApp(): Promise<NestFastifyApplication> {
   app.setGlobalPrefix('api', { exclude: ['health', 'stream'] });
   app.enableShutdownHooks();
 
-  if (config.get('NODE_ENV', { infer: true }) !== 'production') {
+  if (
+    config.get('NODE_ENV', { infer: true }) === 'development' &&
+    !process.env.VERCEL
+  ) {
     // TODO: introspecção dos schemas zod no Swagger (patch quebrado no
     // nestjs-zod@4 + @nestjs/swagger@11). Rotas e tags já aparecem em /docs.
     const swaggerConfig = new DocumentBuilder()
