@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpAdapterHost, NestFactory } from '@nestjs/core';
+import fastifyCors from '@fastify/cors';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -11,6 +12,7 @@ import { Logger as PinoLogger } from 'nestjs-pino';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { buildCorsOrigin } from './common/cors';
 import { Env } from './config/env';
 
 // Dinheiro trafega como BigInt no domínio; na resposta JSON vira string de
@@ -35,13 +37,18 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   const config = app.get(ConfigService<Env, true>);
 
-  await app.register(import('@fastify/multipart'), {
-    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  // CORS registrado direto no Fastify (antes das rotas) para o preflight
+  // responder com os métodos/headers corretos, não só o OPTIONS automático.
+  await app.register(fastifyCors, {
+    origin: buildCorsOrigin(config.get('CORS_ORIGINS', { infer: true })),
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400,
   });
 
-  app.enableCors({
-    origin: config.get('CORS_ORIGINS', { infer: true }),
-    credentials: true,
+  await app.register(import('@fastify/multipart'), {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   });
 
   app.useGlobalPipes(new ZodValidationPipe());
